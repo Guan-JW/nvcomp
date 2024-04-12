@@ -4,6 +4,9 @@
 
 #include "nvcomp/lz4.h"
 
+#include <chrono> // Include the chrono header for timing
+#include <iomanip> // For setprecision
+
 /* 
   To build, execute
   
@@ -20,6 +23,12 @@ void execute_example(char* input_data, const size_t in_bytes)
 {
   cudaStream_t stream;
   cudaStreamCreate(&stream);
+
+  // record time
+  cudaEvent_t start, end;
+  cudaEventCreate(&start);
+  cudaEventCreate(&end);
+  cudaEventRecord(start, stream);
 
   // First, initialize the data on the host.
 
@@ -102,6 +111,31 @@ void execute_example(char* input_data, const size_t in_bytes)
     std::cerr << "Failed compression!" << std::endl;
     assert(comp_res == nvcompSuccess);
   }
+  // compute compression ratio
+  size_t * host_compressed_bytes;
+  cudaMallocHost((void**)&host_compressed_bytes, sizeof(size_t) * batch_size);
+
+  cudaMemcpy(
+    host_compressed_bytes,
+    device_compressed_bytes,
+    sizeof(size_t) * batch_size,
+    cudaMemcpyDeviceToHost);
+  size_t comp_bytes = 0;
+  for (size_t i = 0; i < batch_size; i ++) {
+    comp_bytes += host_compressed_bytes[i];
+  }
+  // std::vector<size_t> compressed_sizes_host(batch_size);
+  // for (const size_t s: host_compressed_bytes) {
+  //   comp_bytes += s;
+  // }
+
+  std::cout << "comp_size: " << comp_bytes
+            << ", compressed ratio: " << std::fixed << std::setprecision(2)
+            << (double)in_bytes / comp_bytes << std::endl;
+
+  float ms;
+  cudaEventElapsedTime(&ms, start, end);
+  std::cout << "compression time (ms): " << ms << std::endl;
 
   // Decompression can be similarly performed on a batch of multiple compressed input chunks. 
   // As no metadata is stored with the compressed data, chunks can be re-arranged as well as decompressed 
@@ -163,6 +197,9 @@ int main()
   const size_t in_bytes = 1000000;
   char* uncompressed_data;
   
+  std::cout << "----------" << std::endl;
+  std::cout << "uncompressed (B): " << in_bytes << std::endl;
+
   cudaMallocHost((void**)&uncompressed_data, in_bytes);
   
   std::mt19937 random_gen(42);

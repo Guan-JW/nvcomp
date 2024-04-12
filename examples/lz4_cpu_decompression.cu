@@ -32,6 +32,15 @@
 #include "lz4hc.h"
 #include "nvcomp/lz4.h"
 
+#include <chrono> // Include the chrono header for timing
+#include <iomanip> // For setprecision
+#include <iostream>
+#include <assert.h>
+#include <random>
+
+// #define CONTINUE100
+#define CONTINUE1
+
 BatchDataCPU GetBatchDataCPU(const BatchData& batch_data, bool copy_data)
 {
   BatchDataCPU compress_data_cpu(
@@ -133,6 +142,10 @@ static void run_example(const std::vector<std::vector<char>>& data)
             << (double)total_bytes / comp_bytes << std::endl;
   std::cout << "compression throughput (GB/s): "
             << (double)total_bytes / (1.0e6 * ms) << std::endl;
+  std::cout << "compression time (ms): " << ms << std::endl;
+
+  // Start timing the compression
+  auto hstart = std::chrono::high_resolution_clock::now();
 
   // Allocate and prepare output/compressed batch
   BatchDataCPU compress_data_cpu = GetBatchDataCPU(compress_data, true);
@@ -156,6 +169,13 @@ static void run_example(const std::vector<std::vector<char>>& data)
   else
     std::cout << "CPU decompression validated :)" << std::endl;
 
+  // End timing the compression
+  auto hend = std::chrono::high_resolution_clock::now();
+  // Calculate the elapsed time in milliseconds
+  auto helapsed = std::chrono::duration_cast<std::chrono::milliseconds>(hend - hstart).count();
+  // Output the elapsed time
+  std::cout << "dempression time (ms): " << helapsed << std::endl;
+
   cudaEventDestroy(start);
   cudaEventDestroy(end);
   cudaStreamDestroy(stream);
@@ -176,6 +196,40 @@ std::vector<char> readFile(const std::string& filename)
   } while (num > 0);
 
   return host_data;
+}
+
+std::vector<std::vector<char>> generate_data(const size_t in_bytes) {
+  std::cout << "----------" << std::endl;
+  std::cout << "uncompressed (B): " << in_bytes << std::endl;
+
+  // char specialization of std::uniform_int_distribution is
+  // non-standard, and isn't available on MSVC, so use short instead,
+  // but with the range limited, and then cast below.
+  std::mt19937 random_gen(42);
+  std::uniform_int_distribution<short> uniform_dist(0, 255);
+
+  std::vector<char> uncompressed_data_vector;
+  uncompressed_data_vector.reserve(in_bytes); // Reserve space to avoid reallocations
+  
+
+  auto data = uniform_dist(random_gen);
+  auto cc = static_cast<char>(data);
+  for (size_t ix = 0; ix < in_bytes; ++ix) {
+    // OPT1: 100 continuously same character
+  #ifdef CONTINUE100
+    if (ix % 100 == 1) {
+      data = uniform_dist(random_gen);
+      cc = static_cast<char>(data);
+    }
+  #elif defined(CONTINUE1)
+    data = uniform_dist(random_gen);
+    cc = static_cast<char>(data);
+  #endif
+    // std::cout << "random gen: " << data << "; const char: " << static_cast<char>(data) << std::endl;
+    uncompressed_data_vector.push_back(cc);
+  }
+
+  return {uncompressed_data_vector};
 }
 
 std::vector<std::vector<char>>
@@ -217,7 +271,10 @@ int main(int argc, char* argv[])
     }
   }
 
-  auto data = multi_file(file_names);
+  // auto data = multi_file(file_names);
+
+  const size_t in_bytes = 1000000;
+  auto data = generate_data(in_bytes);
 
   run_example(data);
 

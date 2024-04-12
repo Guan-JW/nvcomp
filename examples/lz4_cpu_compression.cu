@@ -31,6 +31,9 @@
 #include "lz4hc.h"
 #include "nvcomp/lz4.h"
 
+#include <chrono> // Include the chrono header for timing
+#include <iomanip> // For setprecision
+
 // Benchmark performance from the binary data file fname
 static void run_example(const std::vector<std::vector<char>>& data)
 {
@@ -45,6 +48,9 @@ static void run_example(const std::vector<std::vector<char>>& data)
 
   const size_t chunk_size = 1 << 16;
 
+  // Start timing the compression
+  auto hstart = std::chrono::high_resolution_clock::now();
+  
   // build up input batch on CPU
   BatchDataCPU input_data_cpu(data, chunk_size);
   std::cout << "chunks: " << input_data_cpu.size() << std::endl;
@@ -82,6 +88,13 @@ static void run_example(const std::vector<std::vector<char>>& data)
   std::cout << "comp_size: " << comp_bytes
             << ", compressed ratio: " << std::fixed << std::setprecision(2)
             << (double)total_bytes / comp_bytes << std::endl;
+
+  // End timing the compression
+  auto hend = std::chrono::high_resolution_clock::now();
+  // Calculate the elapsed time in milliseconds
+  auto helapsed = std::chrono::duration_cast<std::chrono::milliseconds>(hend - hstart).count();
+  // Output the elapsed time
+  std::cout << "Compression time: " << helapsed << " ms" << std::endl;
 
   // Copy compressed data to GPU
   BatchData compress_data(compress_data_cpu, true);
@@ -167,6 +180,7 @@ static void run_example(const std::vector<std::vector<char>>& data)
   double decompression_throughput = ((double)total_bytes / ms) * 1e-6;
   std::cout << "decompression throughput (GB/s): " << decompression_throughput
             << std::endl;
+  std::cout << "decompression time(ms): " << ms << std::endl;
 
   cudaFree(d_decomp_temp);
 
